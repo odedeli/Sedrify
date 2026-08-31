@@ -1,0 +1,46 @@
+{
+  "name": "sedrify",
+  "version": "0.0.1",
+  "description": "Sedrify — Personal database builder",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "lint": "eslint src foundation --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@playwright/test": "^1.44.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.sedrify.app",
+    "productName": "Sedrify",
+    "directories": { "output": "dist" },
+    "linux": { "target": "AppImage", "category": "Office" },
+    "win": { "target": "nsis" }
+  }
+}

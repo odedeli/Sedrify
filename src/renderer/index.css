@@ -1,70 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Sedrify Design Tokens — Appendix C (Ambersky V4.0 / OKLCH)
-   Source: Figma Make prototype (Build-from-RFD)
-   These tokens are the single source of truth for all UI styling.
-   Feature modules must use these tokens — never hardcode colour values.
+   Source: Figma Make prototype (Build-from-RFD, Sedrify_UI_v20)
 ───────────────────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+}
 
 /* Dark theme (default) */
 :root {
-  --background:           #1A1D24; /* gray-950 */
-  --foreground:           #EAEBEE; /* gray-100 */
-  --card:                 #282B34; /* gray-900 */
+  --background:           #1A1D24;
+  --foreground:           #EAEBEE;
+  --card:                 #282B34;
   --card-foreground:      #EAEBEE;
-  --primary:              #3757EB; /* cobalt-600 */
+  --primary:              #3757EB;
   --primary-foreground:   #FFFFFF;
-  --secondary:            #393D46; /* gray-800 */
-  --secondary-foreground: #A6ABB7; /* gray-400 */
-  --muted:                #1A1D24; /* gray-950 — used as hover bg on rows */
-  --muted-foreground:     #656C7B; /* gray-600 */
-  --border:               #393D46; /* gray-800 */
-  --ring:                 #3757EB; /* cobalt-600 */
+  --secondary:            #393D46;
+  --secondary-foreground: #A6ABB7;
+  --muted:                #1A1D24;
+  --muted-foreground:     #656C7B;
+  --accent:               #3757EB;
+  --accent-foreground:    #FFFFFF;
+  --border:               #393D46;
+  --ring:                 #3757EB;
   --radius:               3px;
 
-  /* Semantic colours — not tokenised, use inline */
-  --color-saved:          #4DE491; /* grass-300 — saved/active indicator */
-  --color-destructive:    #BD2A49; /* merlot-600 — delete, recycle, required */
-  --color-destructive-bg: #3A0610; /* merlot-950 — destructive hover bg */
+  /* Semantic colours */
+  --color-saved:          #4DE491;
+  --color-destructive:    #BD2A49;
+  --color-destructive-bg: #3A0610;
 }
 
 /* Light theme */
 .light {
-  --background:           #F8F8FA; /* gray-50 */
-  --foreground:           #1A1D24; /* gray-950 */
+  --background:           #F8F8FA;
+  --foreground:           #1A1D24;
   --card:                 #FFFFFF;
   --card-foreground:      #1A1D24;
-  --primary:              #3757EB; /* cobalt-600 — unchanged in light */
+  --primary:              #3757EB;
   --primary-foreground:   #FFFFFF;
-  --secondary:            #EAEBEE; /* gray-100 */
-  --secondary-foreground: #4B5263; /* gray-700 */
-  --muted:                #EAEBEE; /* gray-100 */
-  --muted-foreground:     #868C9C; /* gray-500 */
-  --border:               #D8DBE0; /* gray-200 */
+  --secondary:            #EAEBEE;
+  --secondary-foreground: #4B5263;
+  --muted:                #EAEBEE;
+  --muted-foreground:     #868C9C;
+  --accent:               #3757EB;
+  --accent-foreground:    #FFFFFF;
+  --border:               #D8DBE0;
   --ring:                 #3757EB;
   --radius:               3px;
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 html, body, #root {
   height: 100%;
-  overflow: hidden;
-}
-
-body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  font-size: 13px;
+  font-family: 'Poppins', system-ui, sans-serif;
   background-color: var(--background);
   color: var(--foreground);
-  -webkit-font-smoothing: antialiased;
 }
 
-/* ── Scrollbars ─────────────────────────────────────────────────────────────── */
 * {
   scrollbar-width: none;
 }
@@ -76,7 +89,6 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
-/* ── Typography utilities ───────────────────────────────────────────────────── */
 .font-mono {
   font-family: 'JetBrains Mono', 'Courier New', monospace;
 }

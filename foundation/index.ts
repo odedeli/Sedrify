@@ -12,15 +12,21 @@ export type {
   FieldEntity, ChoiceOptionEntity,
   CreateFieldOptions, UpdateFieldOptions,
 } from './contracts/IFieldRepository'
+export type {
+  IRecordRepository,
+  RecordEntity, RecordDraft, RecordValue,
+  RecordFieldValue, SaveRecordOptions, UpdateRecordOptions,
+} from './contracts/IRecordRepository'
 
 // ── Concrete implementations ──────────────────────────────────────────────────
 export { CabinetEngine } from './cabinet/CabinetEngine'
 export { RecentCabinetsService } from './cabinet/RecentCabinetsService'
 export { FieldTypeRegistry } from './fields/FieldTypeRegistry'
 export { FieldRepository, ChoiceOptionRepository } from './fields/FieldRepository'
+export { RecordRepository } from './records/RecordRepository'
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 export { SCHEMA_VERSION } from './cabinet/schema'
 export { FIELD_CHOICE_OPTIONS_DDL } from './fields/choiceOptionsSchema'
 
-export const FOUNDATION_VERSION = '0.2.0'
+export const FOUNDATION_VERSION = '0.3.0'

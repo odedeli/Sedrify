@@ -17,6 +17,9 @@ export type {
   RecordEntity, RecordDraft, RecordValue,
   RecordFieldValue, SaveRecordOptions, UpdateRecordOptions,
 } from './contracts/IRecordRepository'
+export type {
+  ICabModule, IModuleRegistry, FoundationDependency,
+} from './contracts/IPluginContract'
 
 // ── Concrete implementations ──────────────────────────────────────────────────
 export { CabinetEngine } from './cabinet/CabinetEngine'
@@ -24,9 +27,10 @@ export { RecentCabinetsService } from './cabinet/RecentCabinetsService'
 export { FieldTypeRegistry } from './fields/FieldTypeRegistry'
 export { FieldRepository, ChoiceOptionRepository } from './fields/FieldRepository'
 export { RecordRepository } from './records/RecordRepository'
+export { ModuleRegistry } from './plugin/ModuleRegistry'
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 export { SCHEMA_VERSION } from './cabinet/schema'
 export { FIELD_CHOICE_OPTIONS_DDL } from './fields/choiceOptionsSchema'
 
-export const FOUNDATION_VERSION = '0.3.0'
+export const FOUNDATION_VERSION = '0.4.0'

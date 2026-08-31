@@ -1,10 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
 // Sedrify Foundation — Public API
-// This file is the single entry point for all Foundation exports.
-// Feature modules import from here — never from internal foundation files directly.
-//
-// Sprint F-1 will add: CabinetEngine
-// Sprint F-2 will add: FieldTypeRegistry
-// Sprint F-3 will add: RecordEngine
-// Sprint F-4 will add: PluginContracts
+// Feature modules import from here — never from internal foundation files.
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const FOUNDATION_VERSION = '0.0.1'
+// Contracts (interfaces) — import these in feature modules and tests
+export type { ICabinetEngine, CabinetMeta, CreateCabinetOptions, OpenCabinetResult } from './contracts/ICabinetEngine'
+export type { IRecentCabinets, RecentCabinetEntry } from './contracts/IRecentCabinets'
+
+// Concrete implementations — import these only in the main process / DI root
+export { CabinetEngine } from './cabinet/CabinetEngine'
+export { RecentCabinetsService } from './cabinet/RecentCabinetsService'
+
+// Schema
+export { SCHEMA_VERSION } from './cabinet/schema'
+
+export const FOUNDATION_VERSION = '0.1.0'

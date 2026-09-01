@@ -5,15 +5,16 @@
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "npm run use-electron && electron-vite dev",
+    "build": "npm run use-electron && electron-vite build",
     "preview": "electron-vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "npm run use-node && vitest run",
+    "test:watch": "npm run use-node && vitest",
     "test:e2e": "playwright test",
-    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
-    "rebuild:node": "cd node_modules/.pnpm/better-sqlite3@11.9.1/node_modules/better-sqlite3 && npm run build-release",
-    "postinstall": "electron-rebuild -f -w better-sqlite3 || true"
+    "use-electron": "node scripts/use-electron-binary.js",
+    "use-node": "node scripts/use-node-binary.js",
+    "rebuild:electron": "npx @electron/rebuild -v $(cat node_modules/electron/dist/version) -f -w better-sqlite3 && node scripts/save-electron-binary.js",
+    "rebuild:node": "cd node_modules/.pnpm/better-sqlite3@11.9.1/node_modules/better-sqlite3 && npm run build-release && cd - && node scripts/save-node-binary.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",
@@ -40,7 +41,7 @@
     "vitest": "^3.0.0"
   },
   "build": {
-    "appId": "com.sedrify.app",
+    "appId": "com.sedrery.app",
     "productName": "Sedrify",
     "directories": { "output": "dist" },
     "linux": { "target": "AppImage", "category": "Office" },

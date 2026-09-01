@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { FieldInfo, FieldType } from '../../main/ipcChannels'
 import TypeBadge from '../components/TypeBadge'
+import { ipcField } from '../lib/ipc'
 
 // ── Type picker data ──────────────────────────────────────────────────────────
 
@@ -99,8 +100,8 @@ export default function CabDesigner() {
       }
       setNoCabinet(false)
       const [activeResult, recycledResult] = await Promise.all([
-        window.field.list(),
-        window.field.listRecycled(),
+        ipcField.list(),
+        ipcField.listRecycled(),
       ])
       if (!activeResult.ok) throw new Error(activeResult.error)
       if (!recycledResult.ok) throw new Error(recycledResult.error)
@@ -160,7 +161,7 @@ export default function CabDesigner() {
     setSaving(true)
     setError(null)
     try {
-      const result = await window.field.create({
+      const result = await ipcField.create({
         name: draft.name.trim(),
         type: draft.type,
         required: draft.required,
@@ -190,7 +191,7 @@ export default function CabDesigner() {
   async function updateField(id: string, patch: Partial<FieldDraft>) {
     setError(null)
     try {
-      const result = await window.field.update({
+      const result = await ipcField.update({
         id,
         ...patch,
         options: patch.options !== undefined ? patch.options : undefined,
@@ -210,7 +211,7 @@ export default function CabDesigner() {
     setError(null)
     setContextMenu(null)
     try {
-      const result = await window.field.recycle(id)
+      const result = await ipcField.recycle(id)
       if (!result.ok) throw new Error(result.error)
       await refresh()
       if (selectedId === id) setSelectedId(null)
@@ -224,7 +225,7 @@ export default function CabDesigner() {
   async function restoreField(id: string) {
     setError(null)
     try {
-      const result = await window.field.restore(id)
+      const result = await ipcField.restore(id)
       if (!result.ok) throw new Error(result.error)
       await refresh()
       setSelectedId(result.data.id)
@@ -239,7 +240,7 @@ export default function CabDesigner() {
     setError(null)
     setContextMenu(null)
     try {
-      const result = await window.field.duplicate(id)
+      const result = await ipcField.duplicate(id)
       if (!result.ok) throw new Error(result.error)
       await refresh()
       setSelectedId(result.data.id)
@@ -263,7 +264,7 @@ export default function CabDesigner() {
 
     setError(null)
     try {
-      const result = await window.field.reorder({ orderedIds: reordered.map(f => f.id) })
+      const result = await ipcField.reorder({ orderedIds: reordered.map(f => f.id) })
       if (!result.ok) throw new Error(result.error)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -277,7 +278,7 @@ export default function CabDesigner() {
     setContextMenu(null)
     setError(null)
     try {
-      const result = await window.field.update({ id, isPrimary: true })
+      const result = await ipcField.update({ id, isPrimary: true })
       if (!result.ok) throw new Error(result.error)
       // Clear primary on all other fields locally (server did it atomically)
       await refresh()
@@ -320,7 +321,7 @@ export default function CabDesigner() {
 
     setError(null)
     try {
-      const result = await window.field.reorder({ orderedIds: next.map(f => f.id) })
+      const result = await ipcField.reorder({ orderedIds: next.map(f => f.id) })
       if (!result.ok) throw new Error(result.error)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

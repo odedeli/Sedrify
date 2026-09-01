@@ -4,6 +4,7 @@ import type {
   FieldInfo, FieldCreatePayload, FieldUpdatePayload, FieldReorderPayload,
   RecordInfo, RecordDraftInfo, RecordSavePayload, RecordUpdatePayload,
 } from '../main/ipcChannels'
+import type { AppSettingsData } from '../main/settings-handlers'
 
 declare global {
   interface Window {
@@ -42,6 +43,11 @@ declare global {
       recycle(id: string): Promise<IpcResult<null>>
       restore(id: string): Promise<IpcResult<RecordInfo>>
       delete(id: string): Promise<IpcResult<null>>
+    }
+    settings: {
+      get(): Promise<IpcResult<AppSettingsData>>
+      set(s: AppSettingsData): Promise<IpcResult<AppSettingsData>>
+      reset(): Promise<IpcResult<AppSettingsData>>
     }
   }
 }

@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import CabExplorer from "./modules/CabExplorer";
 import CabDesigner from "./modules/CabDesigner";
 import CabFeeder from "./modules/CabFeeder";
 import CabFinder from "./modules/CabFinder";
 import CabAnalyzer from "./modules/CabAnalyzer";
 import Settings, { defaultSettings, type AppSettings } from "./modules/Settings";
-import DevLog from "./components/DevLog";
-import { devLog } from "./components/DevLog";
+import DevLog, { devLog } from "./components/DevLog";
+import { ipcSettings } from "./lib/ipc";
 
-// Log app start
 devLog('info', 'app', 'Sedrify renderer started')
 
 type ModuleId = "explorer" | "designer" | "feeder" | "finder" | "analyzer";
@@ -43,13 +42,38 @@ const MODULES = [
 
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [activeModule, setActiveModule] = useState<ModuleId>("explorer")
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
+
+  // ── Load settings from disk on startup ────────────────────────────────────
+
+  useEffect(() => {
+    ipcSettings.get().then(result => {
+      if (result.ok && result.data) {
+        setSettings(result.data as AppSettings)
+        devLog('info', 'app', 'Settings loaded from disk')
+      }
+      setSettingsLoaded(true)
+    })
+  }, [])
+
+  // ── Persist settings whenever they change ─────────────────────────────────
+
+  useEffect(() => {
+    if (!settingsLoaded) return
+    ipcSettings.set(settings)
+  }, [settings, settingsLoaded])
+
   const { theme, sidebarCollapsed, showStatusBar } = settings
 
   function setSidebarCollapsed(v: boolean) {
     setSettings(s => ({ ...s, sidebarCollapsed: v }))
+  }
+
+  function handleSettingsChange(newSettings: AppSettings) {
+    setSettings(newSettings)
   }
 
   function renderModule() {
@@ -62,10 +86,14 @@ export default function App() {
     }
   }
 
+  // Don't render until settings are loaded to avoid flash of wrong theme
+  if (!settingsLoaded) return null
+
   return (
     <div className={theme === "light" ? "light" : ""} style={{ height: "100%" }}>
       <div className="flex flex-col" style={{ height: "100%", backgroundColor: "var(--background)", color: "var(--foreground)" }}>
         <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+
           {/* Sidebar */}
           <aside className="flex flex-col shrink-0 transition-all duration-200" style={{
             width: sidebarCollapsed ? 48 : 200,
@@ -86,7 +114,7 @@ export default function App() {
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2 mx-3 my-2 px-2 py-1.5" style={{ borderRadius: "var(--radius)", backgroundColor: "var(--secondary)", border: "1px solid var(--border)" }}>
                 <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, backgroundColor: "#4DE491" }}/>
-                <span className="text-xs truncate" style={{ color: "var(--foreground)", fontWeight: 500 }}>Film Collection</span>
+                <span className="text-xs truncate" style={{ color: "var(--foreground)", fontWeight: 500 }}>Sedrify</span>
               </div>
             )}
 
@@ -99,8 +127,7 @@ export default function App() {
                     className="flex items-center gap-2.5 text-left w-full"
                     title={sidebarCollapsed ? mod.label : undefined}
                     style={{
-                      padding: "7px 14px",
-                      color: active ? "var(--primary)" : "var(--secondary-foreground)",
+                      padding: "7px 14px", color: active ? "var(--primary)" : "var(--secondary-foreground)",
                       backgroundColor: active ? "var(--secondary)" : "transparent",
                       borderTop: "none", borderRight: "none", borderBottom: "none",
                       borderLeft: `2px solid ${active ? "var(--primary)" : "transparent"}`,
@@ -121,8 +148,8 @@ export default function App() {
                   height: 36, padding: "0 14px",
                   color: logOpen ? "#4DE491" : "var(--muted-foreground)",
                   backgroundColor: logOpen ? "#052312" : "transparent",
-                  border: "none", cursor: "pointer", fontFamily: "inherit",
-                  fontSize: 11, fontWeight: logOpen ? 600 : 400,
+                  border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11,
+                  fontWeight: logOpen ? 600 : 400,
                 }}>
                 <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4 shrink-0" stroke="currentColor" strokeWidth="1.5">
                   <rect x="2" y="3" width="12" height="10" rx="1"/>
@@ -156,11 +183,8 @@ export default function App() {
         {/* Status bar */}
         {showStatusBar && (
           <div className="flex items-center shrink-0 gap-3" style={{ height: 24, padding: "0 14px", borderTop: "1px solid var(--border)", backgroundColor: "var(--card)" }}>
-            <StatusItem label="Cabinet" value="Film Collection"/>
+            <StatusItem label="Sedrify" value="v0.1.0"/>
             <Divider/>
-            <StatusItem label="Records" value="10"/>
-            <Divider/>
-            <StatusItem label="Fields" value="8"/>
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="inline-block rounded-full" style={{ width: 5, height: 5, backgroundColor: "#4DE491" }}/>
               <span className="font-mono" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
@@ -171,7 +195,14 @@ export default function App() {
         )}
       </div>
 
-      {settingsOpen && <Settings settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && (
+        <Settings
+          settings={settings}
+          setSettings={handleSettingsChange}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
       {logOpen && <DevLog onClose={() => setLogOpen(false)}/>}
     </div>
   )

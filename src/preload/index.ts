@@ -7,6 +7,7 @@ import {
   type FieldInfo, type FieldCreatePayload, type FieldUpdatePayload, type FieldReorderPayload,
   type RecordInfo, type RecordDraftInfo, type RecordSavePayload, type RecordUpdatePayload,
 } from '../main/ipcChannels'
+import { SETTINGS_GET, SETTINGS_SET, SETTINGS_RESET, type AppSettingsData } from '../main/settings-handlers'
 
 const cabinetAPI = {
   create: (p: CabinetCreatePayload): Promise<IpcResult<CabinetInfo>> => ipcRenderer.invoke(IPC.CABINET_CREATE, p),
@@ -49,14 +50,22 @@ const recordAPI = {
   delete: (id: string): Promise<IpcResult<null>> => ipcRenderer.invoke(IPC.RECORD_DELETE, id),
 }
 
+const settingsAPI = {
+  get: (): Promise<IpcResult<AppSettingsData>> => ipcRenderer.invoke(SETTINGS_GET),
+  set: (s: AppSettingsData): Promise<IpcResult<AppSettingsData>> => ipcRenderer.invoke(SETTINGS_SET, s),
+  reset: (): Promise<IpcResult<AppSettingsData>> => ipcRenderer.invoke(SETTINGS_RESET),
+}
+
 contextBridge.exposeInMainWorld('cabinet', cabinetAPI)
 contextBridge.exposeInMainWorld('recent', recentAPI)
 contextBridge.exposeInMainWorld('dialog', dialogAPI)
 contextBridge.exposeInMainWorld('field', fieldAPI)
 contextBridge.exposeInMainWorld('record', recordAPI)
+contextBridge.exposeInMainWorld('settings', settingsAPI)
 
 export type CabinetAPI = typeof cabinetAPI
 export type RecentAPI = typeof recentAPI
 export type DialogAPI = typeof dialogAPI
 export type FieldAPI = typeof fieldAPI
 export type RecordAPI = typeof recordAPI
+export type SettingsAPI = typeof settingsAPI

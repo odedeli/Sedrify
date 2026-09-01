@@ -5,7 +5,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['foundation/__tests__/**/*.test.ts'],
-    globals: true
+    globals: true,
+    // Use a separate pool so better-sqlite3 loads fresh each run
+    pool: 'forks',
   },
   resolve: {
     alias: {

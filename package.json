@@ -11,11 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "lint": "eslint src foundation --ext .ts,.tsx"
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "cd node_modules/.pnpm/better-sqlite3@11.9.1/node_modules/better-sqlite3 && npm run build-release",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 || true"
   },
   "dependencies": {
-    "better-sqlite3": "11.9.1",
+    "better-sqlite3": "^11.9.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -41,15 +42,8 @@
   "build": {
     "appId": "com.sedrify.app",
     "productName": "Sedrify",
-    "directories": {
-      "output": "dist"
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Office"
-    },
-    "win": {
-      "target": "nsis"
-    }
+    "directories": { "output": "dist" },
+    "linux": { "target": "AppImage", "category": "Office" },
+    "win": { "target": "nsis" }
   }
 }

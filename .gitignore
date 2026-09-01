@@ -8,3 +8,5 @@ out/
 coverage/
 playwright-report/
 test-results/
+sample/*.cabinet-shm
+sample/*.cabinet-wal

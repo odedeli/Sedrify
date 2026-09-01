@@ -4,17 +4,21 @@
   "description": "Sedrify — Personal database builder",
   "private": true,
   "main": "./out/main/index.js",
+  "author": {
+    "name": "Sedrify Project"
+  },
   "scripts": {
-    "dev": "npm run use-electron && electron-vite dev",
-    "build": "npm run use-electron && electron-vite build",
+    "dev": "node scripts/use-electron-binary.js && electron-vite dev",
+    "build": "node scripts/use-electron-binary.js && electron-vite build",
     "preview": "electron-vite preview",
-    "test": "npm run use-node && vitest run",
-    "test:watch": "npm run use-node && vitest",
-    "test:e2e": "playwright test",
+    "test": "node scripts/use-node-binary.js && vitest run",
+    "test:watch": "node scripts/use-node-binary.js && vitest",
+    "dist": "node scripts/use-electron-binary.js && node scripts/copy-native-deps.js && electron-vite build && electron-builder --linux AppImage",
     "use-electron": "node scripts/use-electron-binary.js",
     "use-node": "node scripts/use-node-binary.js",
     "rebuild:electron": "npx @electron/rebuild -v $(cat node_modules/electron/dist/version) -f -w better-sqlite3 && node scripts/save-electron-binary.js",
-    "rebuild:node": "cd node_modules/.pnpm/better-sqlite3@11.9.1/node_modules/better-sqlite3 && npm run build-release && cd - && node scripts/save-node-binary.js"
+    "rebuild:node": "cd node_modules/.pnpm/better-sqlite3@11.9.1/node_modules/better-sqlite3 && npm run build-release && cd - && node scripts/save-node-binary.js",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",
@@ -33,7 +37,6 @@
     "@vitejs/plugin-react": "^4.0.0",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
-    "electron-rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
@@ -43,8 +46,16 @@
   "build": {
     "appId": "com.sedrery.app",
     "productName": "Sedrify",
-    "directories": { "output": "dist" },
-    "linux": { "target": "AppImage", "category": "Office" },
-    "win": { "target": "nsis" }
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Office"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

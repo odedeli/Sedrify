@@ -1,344 +1,304 @@
-import { useState, useMemo } from "react";
-import { mockRecords, mockFields, formatValue } from "../data/mockData";
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import type { FieldInfo, RecordInfo } from '../../main/ipcChannels'
+import TypeBadge from '../components/TypeBadge'
+import { ipcField, ipcRecord } from '../lib/ipc'
 
-const RECENT = ["Denis Villeneuve", "Sci-Fi", "9.0", "2019"];
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-type RecordHit = { kind: "record"; id: string; seq: number; title: string; fieldName: string; matchValue: string };
-type FieldHit = { kind: "field"; id: string; name: string; type: string };
-type Hit = RecordHit | FieldHit;
+interface RecordHit {
+  record: RecordInfo
+  matchingField: FieldInfo
+  matchedValue: string
+}
+
+interface FieldHit {
+  field: FieldInfo
+}
+
+const RECENT_KEY = 'sedrify_finder_recent'
+const MAX_RECENT = 8
+
+// ── Highlight helper ──────────────────────────────────────────────────────────
+
+function highlight(text: string, query: string): React.ReactNode {
+  if (!query) return text
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return text
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ backgroundColor: '#3757EB33', color: 'var(--primary)', borderRadius: 2, padding: '0 1px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function CabFinder() {
-  const [query, setQuery] = useState("");
-  const [focused, setFocused] = useState(false);
-  const [selectedHit, setSelectedHit] = useState<string | null>(null);
+  const [query, setQuery] = useState('')
+  const [fields, setFields] = useState<FieldInfo[]>([])
+  const [records, setRecords] = useState<RecordInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [noCabinet, setNoCabinet] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
+  })
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const hits = useMemo<Hit[]>(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return [];
-    const results: Hit[] = [];
+  // ── Keyboard shortcut: / to focus ─────────────────────────────────────────
 
-    mockRecords.forEach((record) => {
-      mockFields.forEach((field) => {
-        const v = record.values[field.id];
-        if (v !== null && v !== undefined && String(v).toLowerCase().includes(q)) {
-          const existing = results.find(
-            (h) => h.kind === "record" && h.id === record.id
-          );
-          if (!existing) {
-            results.push({
-              kind: "record",
-              id: record.id,
-              seq: record.seq,
-              title: String(record.values["f1"] ?? `Record ${record.seq}`),
-              fieldName: field.name,
-              matchValue: String(v),
-            });
-          }
-        }
-      });
-    });
-
-    mockFields.forEach((field) => {
-      if (field.name.toLowerCase().includes(q)) {
-        results.push({ kind: "field", id: field.id, name: field.name, type: field.type });
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === '/' && document.activeElement !== inputRef.current) {
+        e.preventDefault()
+        inputRef.current?.focus()
       }
-    });
+      if (e.key === 'Escape') {
+        setQuery('')
+        inputRef.current?.blur()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
-    return results;
-  }, [query]);
+  // ── Load data ──────────────────────────────────────────────────────────────
 
-  const recordHits = hits.filter((h): h is RecordHit => h.kind === "record");
-  const fieldHits = hits.filter((h): h is FieldHit => h.kind === "field");
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const currentResult = await window.cabinet.current()
+      if (!currentResult.ok || !currentResult.data) {
+        setNoCabinet(true)
+        setFields([])
+        setRecords([])
+        return
+      }
+      setNoCabinet(false)
+      const [fieldsResult, recordsResult] = await Promise.all([
+        ipcField.list(),
+        ipcRecord.list(),
+      ])
+      if (fieldsResult.ok) setFields(fieldsResult.data)
+      if (recordsResult.ok) setRecords(recordsResult.data)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  // ── Search results ─────────────────────────────────────────────────────────
+
+  const primaryField = useMemo(() => fields.find(f => f.isPrimary), [fields])
+
+  const { recordHits, fieldHits } = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return { recordHits: [], fieldHits: [] }
+
+    // Record hits — search all field values
+    const recordHits: RecordHit[] = []
+    for (const record of records) {
+      for (const field of fields) {
+        const value = record.values[field.id]
+        if (value === null || value === undefined) continue
+        const str = String(value).toLowerCase()
+        if (str.includes(q)) {
+          recordHits.push({ record, matchingField: field, matchedValue: String(value) })
+          break // one hit per record
+        }
+      }
+    }
+
+    // Field hits — search field names
+    const fieldHits: FieldHit[] = fields
+      .filter(f => f.name.toLowerCase().includes(q))
+      .map(f => ({ field: f }))
+
+    return { recordHits, fieldHits }
+  }, [query, records, fields])
+
+  const totalResults = recordHits.length + fieldHits.length
+
+  // ── Save recent search ─────────────────────────────────────────────────────
+
+  function saveRecent(q: string) {
+    if (!q.trim()) return
+    const updated = [q, ...recentSearches.filter(s => s !== q)].slice(0, MAX_RECENT)
+    setRecentSearches(updated)
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  }
+
+  function clearRecent() {
+    setRecentSearches([])
+    try { localStorage.removeItem(RECENT_KEY) } catch { /* ignore */ }
+  }
+
+  // ── No cabinet ─────────────────────────────────────────────────────────────
+
+  if (noCabinet) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3" style={{ color: 'var(--muted-foreground)' }}>
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 40, height: 40 }}>
+          <circle cx="22" cy="22" r="14"/><path d="M32 32L42 42" strokeLinecap="round"/>
+        </svg>
+        <p style={{ fontSize: 13 }}>No cabinet open — open one in Cab Explorer</p>
+      </div>
+    )
+  }
 
   return (
-    <div
-      className="flex flex-col"
-      style={{ height: "100%", backgroundColor: "var(--background)" }}
-    >
-      {/* Search bar region */}
-      <div
-        className="flex flex-col items-center justify-center shrink-0"
-        style={{ padding: "40px 24px 24px", borderBottom: "1px solid var(--border)" }}
-      >
-        <p className="text-xs font-medium mb-4" style={{ color: "var(--muted-foreground)", letterSpacing: "0.06em" }}>
-          CAB FINDER
-        </p>
+    <div className="flex flex-col" style={{ height: '100%', backgroundColor: 'var(--background)' }}>
 
-        {/* Search input */}
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 560,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "0 14px",
-            height: 44,
-            borderRadius: "var(--radius)",
-            border: `1px solid ${focused ? "var(--primary)" : "var(--border)"}`,
-            backgroundColor: "var(--card)",
-            transition: "border-color 0.15s",
-          }}
-        >
-          <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4 shrink-0" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--muted-foreground)" }}>
-            <circle cx="7" cy="7" r="4.5" />
-            <path d="M11 11l3 3" strokeLinecap="round" />
+      {/* Search bar */}
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', backgroundColor: 'var(--card)' }}>
+        <div style={{ position: 'relative' }}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: 'var(--muted-foreground)', pointerEvents: 'none' }}>
+            <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14" strokeLinecap="round"/>
           </svg>
           <input
+            ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder="Search records, fields, values…"
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && query.trim()) saveRecent(query.trim()) }}
+            placeholder="Search records and fields… (press / to focus)"
+            autoFocus
             style={{
-              flex: 1,
-              fontSize: 14,
-              border: "none",
-              outline: "none",
-              backgroundColor: "transparent",
-              color: "var(--foreground)",
-              fontFamily: "inherit",
+              width: '100%', fontSize: 13, padding: '8px 36px 8px 32px',
+              borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+              backgroundColor: 'var(--background)', color: 'var(--foreground)',
+              fontFamily: 'inherit', outline: 'none',
             }}
           />
-          {query ? (
-            <button onClick={() => setQuery("")} style={{ color: "var(--muted-foreground)" }}>
-              <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3" stroke="currentColor" strokeWidth="1.5">
-                <path d="M2 2l8 8M10 2l-8 8" strokeLinecap="round" />
-              </svg>
-            </button>
-          ) : (
-            <kbd
-              className="font-mono"
-              style={{
-                fontSize: 11,
-                padding: "2px 6px",
-                borderRadius: 2,
-                border: "1px solid var(--border)",
-                backgroundColor: "var(--secondary)",
-                color: "var(--muted-foreground)",
-              }}
-            >
-              /
-            </kbd>
+          {query && (
+            <button onClick={() => setQuery('')} style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', color: 'var(--muted-foreground)',
+              cursor: 'pointer', fontSize: 12, padding: 2,
+            }}>✕</button>
           )}
         </div>
 
-        {/* Result count */}
-        {query && (
-          <p className="font-mono mt-3" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-            {hits.length === 0 ? "No results" : `${hits.length} result${hits.length !== 1 ? "s" : ""}`}
+        {query.trim() && (
+          <p style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 8 }}>
+            {loading ? 'Searching…' : `${totalResults} result${totalResults !== 1 ? 's' : ''} — ${recordHits.length} record${recordHits.length !== 1 ? 's' : ''}, ${fieldHits.length} field${fieldHits.length !== 1 ? 's' : ''}`}
           </p>
         )}
       </div>
 
-      {/* Results / recent area */}
-      <div className="flex-1 overflow-y-auto" style={{ padding: "16px 24px" }}>
-        {!query ? (
-          <div style={{ maxWidth: 560, margin: "0 auto" }}>
-            <p className="text-xs mb-3" style={{ color: "var(--muted-foreground)", letterSpacing: "0.05em" }}>
-              RECENT SEARCHES
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {RECENT.map((term) => (
-                <button
-                  key={term}
-                  onClick={() => setQuery(term)}
-                  style={{
-                    fontSize: 12,
-                    padding: "4px 10px",
-                    borderRadius: "var(--radius)",
-                    border: "1px solid var(--border)",
-                    backgroundColor: "var(--card)",
-                    color: "var(--secondary-foreground)",
-                    fontFamily: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
-                  {term}
-                </button>
-              ))}
-            </div>
+      {/* Results */}
+      <div className="flex-1 overflow-y-auto" style={{ padding: '12px 20px' }}>
 
-            <div style={{ marginTop: 32 }}>
-              <p className="text-xs mb-3" style={{ color: "var(--muted-foreground)", letterSpacing: "0.05em" }}>
-                SEARCH SCOPE
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {[
-                  { label: "Records", note: "All field values in the current view" },
-                  { label: "Fields", note: "Field names and descriptions" },
-                  { label: "Linked files", note: "File paths — matched by filename" },
-                ].map((scope) => (
-                  <div key={scope.label} className="flex items-center gap-3 py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
-                    <span className="text-xs font-medium" style={{ color: "var(--foreground)", width: 90 }}>{scope.label}</span>
-                    <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>{scope.note}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ maxWidth: 560, margin: "0 auto" }} className="flex flex-col gap-5">
-            {recordHits.length > 0 && (
-              <ResultGroup title="Records" count={recordHits.length}>
-                {recordHits.map((hit) => (
-                  <RecordResult
-                    key={hit.id}
-                    hit={hit}
-                    query={query}
-                    isSelected={selectedHit === hit.id}
-                    onClick={() => setSelectedHit(hit.id === selectedHit ? null : hit.id)}
-                  />
-                ))}
-              </ResultGroup>
-            )}
-
-            {fieldHits.length > 0 && (
-              <ResultGroup title="Fields" count={fieldHits.length}>
-                {fieldHits.map((hit) => (
-                  <FieldResult
-                    key={hit.id}
-                    hit={hit}
-                    query={query}
-                    isSelected={selectedHit === hit.id}
-                    onClick={() => setSelectedHit(hit.id === selectedHit ? null : hit.id)}
-                  />
-                ))}
-              </ResultGroup>
-            )}
-
-            {hits.length === 0 && (
-              <div className="flex flex-col items-center gap-2 py-16">
-                <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8" stroke="currentColor" strokeWidth="1.2" style={{ color: "var(--border)" }}>
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M16.5 16.5L21 21" strokeLinecap="round" />
-                  <path d="M8 11h6M11 8v6" strokeLinecap="round" />
+        {/* Empty query — show recent searches */}
+        {!query.trim() && (
+          <div>
+            {recentSearches.length > 0 ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', letterSpacing: '0.05em' }}>RECENT</span>
+                  <button onClick={clearRecent} style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted-foreground)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {recentSearches.map(s => (
+                    <button key={s} onClick={() => setQuery(s)} style={{
+                      fontSize: 12, padding: '4px 10px', borderRadius: 'var(--radius)',
+                      border: '1px solid var(--border)', backgroundColor: 'var(--secondary)',
+                      color: 'var(--secondary-foreground)', cursor: 'pointer', fontFamily: 'inherit',
+                    }}>{s}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted-foreground)' }}>
+                <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 36, height: 36, margin: '0 auto 12px', display: 'block' }}>
+                  <circle cx="22" cy="22" r="14"/><path d="M32 32L42 42" strokeLinecap="round"/>
                 </svg>
-                <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-                  No results for <strong style={{ color: "var(--foreground)" }}>{query}</strong>
-                </p>
+                <p style={{ fontSize: 13 }}>Search across all records and fields</p>
+                <p style={{ fontSize: 11, marginTop: 6 }}>Press <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>/</kbd> to focus · <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>Esc</kbd> to clear</p>
               </div>
             )}
           </div>
         )}
+
+        {/* No results */}
+        {query.trim() && totalResults === 0 && !loading && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted-foreground)' }}>
+            <p style={{ fontSize: 13 }}>No results for "{query}"</p>
+            <p style={{ fontSize: 11, marginTop: 6 }}>Try a different search term</p>
+          </div>
+        )}
+
+        {/* Record hits */}
+        {recordHits.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', letterSpacing: '0.05em', marginBottom: 8 }}>
+              RECORDS <span style={{ fontWeight: 400, marginLeft: 4 }}>({recordHits.length})</span>
+            </p>
+            {recordHits.map(({ record, matchingField, matchedValue }) => {
+              const title = primaryField
+                ? (record.values[primaryField.id] !== null ? String(record.values[primaryField.id]) : '—')
+                : `Record #${record.sequence}`
+              const isMatchingPrimary = primaryField?.id === matchingField.id
+
+              return (
+                <div key={record.id} style={{
+                  padding: '10px 12px', borderRadius: 'var(--radius)',
+                  border: '1px solid var(--border)', backgroundColor: 'var(--card)',
+                  marginBottom: 6, cursor: 'default',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isMatchingPrimary ? 0 : 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--muted-foreground)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>#{record.sequence}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {isMatchingPrimary ? highlight(title, query) : title}
+                    </span>
+                  </div>
+                  {!isMatchingPrimary && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <TypeBadge type={matchingField.type} size="xs" />
+                      <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{matchingField.name}:</span>
+                      <span style={{ fontSize: 11, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {highlight(matchedValue, query)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Field hits */}
+        {fieldHits.length > 0 && (
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', letterSpacing: '0.05em', marginBottom: 8 }}>
+              FIELDS <span style={{ fontWeight: 400, marginLeft: 4 }}>({fieldHits.length})</span>
+            </p>
+            {fieldHits.map(({ field }) => (
+              <div key={field.id} style={{
+                padding: '8px 12px', borderRadius: 'var(--radius)',
+                border: '1px solid var(--border)', backgroundColor: 'var(--card)',
+                marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <TypeBadge type={field.type} size="xs" />
+                <span style={{ fontSize: 13, color: 'var(--foreground)' }}>
+                  {highlight(field.name, query)}
+                </span>
+                {field.isPrimary && (
+                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 2, border: '1px solid var(--primary)', color: 'var(--primary)', marginLeft: 'auto' }}>PRIMARY</span>
+                )}
+                {field.required && (
+                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 2, border: '1px solid var(--muted-foreground)', color: 'var(--muted-foreground)' }}>REQUIRED</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  );
-}
-
-function ResultGroup({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium" style={{ color: "var(--muted-foreground)", letterSpacing: "0.05em" }}>
-          {title.toUpperCase()}
-        </span>
-        <span
-          className="font-mono"
-          style={{ fontSize: 10, padding: "1px 5px", borderRadius: 2, backgroundColor: "var(--secondary)", color: "var(--secondary-foreground)" }}
-        >
-          {count}
-        </span>
-      </div>
-      <div className="flex flex-col gap-1">{children}</div>
-    </div>
-  );
-}
-
-function highlightMatch(text: string, query: string) {
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return <span>{text}</span>;
-  return (
-    <span>
-      {text.slice(0, idx)}
-      <mark style={{ backgroundColor: "rgba(55,87,235,0.25)", color: "var(--foreground)", borderRadius: 1 }}>
-        {text.slice(idx, idx + query.length)}
-      </mark>
-      {text.slice(idx + query.length)}
-    </span>
-  );
-}
-
-function RecordResult({
-  hit,
-  query,
-  isSelected,
-  onClick,
-}: {
-  hit: RecordHit;
-  query: string;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: "8px 12px",
-        borderRadius: "var(--radius)",
-        border: `1px solid ${isSelected ? "var(--primary)" : "var(--border)"}`,
-        backgroundColor: isSelected ? "var(--secondary)" : hovered ? "var(--card)" : "transparent",
-        cursor: "pointer",
-      }}
-    >
-      <div className="flex items-center gap-2 mb-0.5">
-        <span className="font-mono" style={{ fontSize: 10, color: "var(--muted-foreground)" }}>
-          #{hit.seq}
-        </span>
-        <span className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
-          {highlightMatch(hit.title, query)}
-        </span>
-      </div>
-      <p style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-        <span style={{ color: "var(--secondary-foreground)" }}>{hit.fieldName}: </span>
-        {highlightMatch(hit.matchValue, query)}
-      </p>
-    </div>
-  );
-}
-
-function FieldResult({
-  hit,
-  query,
-  isSelected,
-  onClick,
-}: {
-  hit: FieldHit;
-  query: string;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: "8px 12px",
-        borderRadius: "var(--radius)",
-        border: `1px solid ${isSelected ? "var(--primary)" : "var(--border)"}`,
-        backgroundColor: isSelected ? "var(--secondary)" : hovered ? "var(--card)" : "transparent",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-      }}
-    >
-      <span
-        className="font-mono"
-        style={{ fontSize: 10, padding: "2px 5px", borderRadius: 2, backgroundColor: "var(--secondary)", color: "var(--secondary-foreground)" }}
-      >
-        {hit.type}
-      </span>
-      <span className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
-        {highlightMatch(hit.name, query)}
-      </span>
-      <span className="ml-auto text-xs" style={{ color: "var(--muted-foreground)" }}>Field</span>
-    </div>
-  );
+  )
 }

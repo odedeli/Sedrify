@@ -6,7 +6,9 @@ import { CabinetEngine } from '../../foundation/cabinet/CabinetEngine'
 import { RecentCabinetsService } from '../../foundation/cabinet/RecentCabinetsService'
 import { FieldRepository } from '../../foundation/fields/FieldRepository'
 import { FieldTypeRegistry } from '../../foundation/fields/FieldTypeRegistry'
+import { RecordRepository } from '../../foundation/records/RecordRepository'
 import type { FieldEntity } from '../../foundation/contracts/IFieldRepository'
+import type { RecordEntity } from '../../foundation/contracts/IRecordRepository'
 import {
   IPC,
   type IpcResult,
@@ -18,6 +20,10 @@ import {
   type FieldCreatePayload,
   type FieldUpdatePayload,
   type FieldReorderPayload,
+  type RecordInfo,
+  type RecordDraftInfo,
+  type RecordSavePayload,
+  type RecordUpdatePayload,
 } from './ipcChannels'
 
 // ── Logger ────────────────────────────────────────────────────────────────────
@@ -54,9 +60,7 @@ try {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function ok<T>(data: T): IpcResult<T> {
-  return { ok: true, data }
-}
+function ok<T>(data: T): IpcResult<T> { return { ok: true, data } }
 
 function fail<T>(error: unknown): IpcResult<T> {
   const message = error instanceof Error ? error.message : String(error)
@@ -68,38 +72,45 @@ function metaToCabinetInfo(meta: {
   id: string; name: string; path: string
   schemaVersion: number; createdAt: string; updatedAt: string
 }): CabinetInfo {
-  return {
-    id: meta.id, name: meta.name, path: meta.path,
-    schemaVersion: meta.schemaVersion,
-    createdAt: meta.createdAt, updatedAt: meta.updatedAt,
-  }
+  return { id: meta.id, name: meta.name, path: meta.path, schemaVersion: meta.schemaVersion, createdAt: meta.createdAt, updatedAt: meta.updatedAt }
 }
 
 function entityToFieldInfo(e: FieldEntity): FieldInfo {
   return {
-    id: e.id,
-    collectionId: e.collectionId,
-    name: e.name,
-    type: e.fieldType as FieldInfo['type'],
-    required: e.required,
-    isPrimary: e.isPrimary,
-    description: e.description,
-    defaultValue: e.defaultValue ?? '',
+    id: e.id, collectionId: e.collectionId, name: e.name,
+    type: e.fieldType as FieldInfo['type'], required: e.required, isPrimary: e.isPrimary,
+    description: e.description, defaultValue: e.defaultValue ?? '',
     displayOrder: e.displayOrder,
     options: e.config as Record<string, string | number | boolean | string[]>,
-    recycled: e.recycled,
-    createdAt: e.createdAt,
-    updatedAt: e.updatedAt,
+    recycled: e.recycled, createdAt: e.createdAt, updatedAt: e.updatedAt,
   }
 }
 
-/** Get FieldRepository for the currently open cabinet. Throws if none open. */
-function getFieldRepo(): FieldRepository {
-  const db = cabinetEngine.getDb()
-  return new FieldRepository(db, fieldTypeRegistry)
+function entityToRecordInfo(e: RecordEntity): RecordInfo {
+  // Convert RecordValue (string | number | Uint8Array | null) to (string | number | null)
+  const values: Record<string, string | number | null> = {}
+  for (const [k, v] of Object.entries(e.values)) {
+    if (v instanceof Uint8Array) values[k] = '[blob]'
+    else values[k] = v as string | number | null
+  }
+  return {
+    id: e.id, collectionId: e.collectionId, sequence: e.sequence,
+    recycled: e.recycled, recycledAt: e.recycledAt,
+    createdAt: e.createdAt, updatedAt: e.updatedAt,
+    values,
+  }
 }
 
-/** Get the default collection ID from the open cabinet. */
+function getFieldRepo(): FieldRepository {
+  return new FieldRepository(cabinetEngine.getDb(), fieldTypeRegistry)
+}
+
+function getRecordRepo(): RecordRepository {
+  const db = cabinetEngine.getDb()
+  const fieldRepo = new FieldRepository(db, fieldTypeRegistry)
+  return new RecordRepository(db, fieldRepo)
+}
+
 function getCollectionId(): string {
   const db = cabinetEngine.getDb()
   const row = db.prepare('SELECT id FROM collections LIMIT 1').get() as { id: string } | undefined
@@ -224,27 +235,17 @@ function registerIpcHandlers(): void {
     try {
       const repo = getFieldRepo()
       const collectionId = getCollectionId()
-
-      // FR-FLD-006: if setting as primary, clear existing primary first
       if (payload.isPrimary) {
         const existing = await repo.list(collectionId)
         const currentPrimary = existing.find(f => f.isPrimary)
-        if (currentPrimary) {
-          await repo.update(currentPrimary.id, { isPrimary: false })
-        }
+        if (currentPrimary) await repo.update(currentPrimary.id, { isPrimary: false })
       }
-
       const entity = await repo.create({
-        collectionId,
-        name: payload.name,
-        fieldType: payload.type,
-        required: payload.required,
-        isPrimary: payload.isPrimary,
-        description: payload.description,
-        defaultValue: payload.defaultValue || null,
+        collectionId, name: payload.name, fieldType: payload.type,
+        required: payload.required, isPrimary: payload.isPrimary,
+        description: payload.description, defaultValue: payload.defaultValue || null,
         config: payload.options ?? {},
       })
-      log('INFO', 'field:create success', entity.id)
       return ok(entityToFieldInfo(entity))
     } catch (err) { return fail(err) }
   })
@@ -254,22 +255,14 @@ function registerIpcHandlers(): void {
     try {
       const repo = getFieldRepo()
       const collectionId = getCollectionId()
-
-      // FR-FLD-006: if setting as primary, clear existing primary first
       if (payload.isPrimary === true) {
         const existing = await repo.list(collectionId)
         const currentPrimary = existing.find(f => f.isPrimary && f.id !== payload.id)
-        if (currentPrimary) {
-          await repo.update(currentPrimary.id, { isPrimary: false })
-        }
+        if (currentPrimary) await repo.update(currentPrimary.id, { isPrimary: false })
       }
-
       const entity = await repo.update(payload.id, {
-        name: payload.name,
-        fieldType: payload.type,
-        required: payload.required,
-        isPrimary: payload.isPrimary,
-        description: payload.description,
+        name: payload.name, fieldType: payload.type, required: payload.required,
+        isPrimary: payload.isPrimary, description: payload.description,
         defaultValue: payload.defaultValue !== undefined ? (payload.defaultValue || null) : undefined,
         config: payload.options,
       })
@@ -289,20 +282,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.FIELD_RECYCLE, async (_event, id: string): Promise<IpcResult<null>> => {
     log('INFO', 'field:recycle', id)
-    try {
-      const repo = getFieldRepo()
-      await repo.recycle(id)
-      return ok(null)
-    } catch (err) { return fail(err) }
+    try { await getFieldRepo().recycle(id); return ok(null) }
+    catch (err) { return fail(err) }
   })
 
   ipcMain.handle(IPC.FIELD_RESTORE, async (_event, id: string): Promise<IpcResult<FieldInfo>> => {
     log('INFO', 'field:restore', id)
-    try {
-      const repo = getFieldRepo()
-      const entity = await repo.restore(id)
-      return ok(entityToFieldInfo(entity))
-    } catch (err) { return fail(err) }
+    try { return ok(entityToFieldInfo(await getFieldRepo().restore(id))) }
+    catch (err) { return fail(err) }
   })
 
   ipcMain.handle(IPC.FIELD_DUPLICATE, async (_event, id: string): Promise<IpcResult<FieldInfo>> => {
@@ -310,29 +297,91 @@ function registerIpcHandlers(): void {
     try {
       const repo = getFieldRepo()
       const collectionId = getCollectionId()
-
-      // Get the source field
       const source = await repo.get(id)
       if (!source) throw new Error(`Field not found: ${id}`)
-
-      // Create a copy with modified name
-      const copyName = `${source.name} (copy)`
       const entity = await repo.create({
-        collectionId,
-        name: copyName,
-        fieldType: source.fieldType,
-        required: source.required,
-        isPrimary: false, // copy is never primary
-        description: source.description,
-        defaultValue: source.defaultValue,
+        collectionId, name: `${source.name} (copy)`, fieldType: source.fieldType,
+        required: source.required, isPrimary: false,
+        description: source.description, defaultValue: source.defaultValue,
         config: { ...source.config },
       })
-      log('INFO', 'field:duplicate success', { from: id, to: entity.id })
       return ok(entityToFieldInfo(entity))
     } catch (err) { return fail(err) }
   })
 
-  log('INFO', 'IPC handlers registered (cabinet + field)')
+  // ── Record handlers (M-3) ──────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.RECORD_LIST, async (): Promise<IpcResult<RecordInfo[]>> => {
+    try {
+      const collectionId = getCollectionId()
+      const records = await getRecordRepo().list(collectionId)
+      return ok(records.map(entityToRecordInfo))
+    } catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_LIST_RECYCLED, async (): Promise<IpcResult<RecordInfo[]>> => {
+    try {
+      const collectionId = getCollectionId()
+      const records = await getRecordRepo().listRecycled(collectionId)
+      return ok(records.map(entityToRecordInfo))
+    } catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_DRAFT, async (): Promise<IpcResult<RecordDraftInfo>> => {
+    try {
+      const collectionId = getCollectionId()
+      const draft = await getRecordRepo().draft(collectionId)
+      const values: Record<string, string | number | null> = {}
+      for (const [k, v] of Object.entries(draft.values)) {
+        if (v instanceof Uint8Array) values[k] = null
+        else values[k] = v as string | number | null
+      }
+      return ok({ collectionId: draft.collectionId, values })
+    } catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_SAVE, async (_event, payload: RecordSavePayload): Promise<IpcResult<RecordInfo>> => {
+    log('INFO', 'record:save')
+    try {
+      const collectionId = getCollectionId()
+      const record = await getRecordRepo().save({ collectionId, values: payload.values })
+      log('INFO', 'record:save success', { seq: record.sequence })
+      return ok(entityToRecordInfo(record))
+    } catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_UPDATE, async (_event, payload: RecordUpdatePayload): Promise<IpcResult<RecordInfo>> => {
+    log('INFO', 'record:update', { id: payload.id })
+    try {
+      const record = await getRecordRepo().update(payload.id, { values: payload.values })
+      return ok(entityToRecordInfo(record))
+    } catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_RECYCLE, async (_event, id: string): Promise<IpcResult<null>> => {
+    log('INFO', 'record:recycle', id)
+    try { await getRecordRepo().recycle(id); return ok(null) }
+    catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_RESTORE, async (_event, id: string): Promise<IpcResult<RecordInfo>> => {
+    log('INFO', 'record:restore', id)
+    try { return ok(entityToRecordInfo(await getRecordRepo().restore(id))) }
+    catch (err) { return fail(err) }
+  })
+
+  ipcMain.handle(IPC.RECORD_DELETE, async (_event, id: string): Promise<IpcResult<null>> => {
+    log('INFO', 'record:delete', id)
+    try {
+      // Permanent delete — recycle first then remove from DB
+      const db = cabinetEngine.getDb()
+      db.prepare('DELETE FROM record_values WHERE record_id = ?').run(id)
+      db.prepare('DELETE FROM records WHERE id = ?').run(id)
+      return ok(null)
+    } catch (err) { return fail(err) }
+  })
+
+  log('INFO', 'IPC handlers registered (cabinet + field + record)')
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────
@@ -341,29 +390,12 @@ let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    autoHideMenuBar: true,
-    title: 'Sedrify',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-    },
+    width: 1280, height: 800, minWidth: 900, minHeight: 600,
+    show: false, autoHideMenuBar: true, title: 'Sedrify',
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false },
   })
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
-    log('INFO', 'Window shown')
-  })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
+  mainWindow.on('ready-to-show', () => { mainWindow?.show(); log('INFO', 'Window shown') })
+  mainWindow.webContents.setWindowOpenHandler((details) => { shell.openExternal(details.url); return { action: 'deny' } })
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -374,16 +406,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    cabinetEngine.close().finally(() => {
-      log('INFO', 'App quitting')
-      app.quit()
-    })
+    cabinetEngine.close().finally(() => { log('INFO', 'App quitting'); app.quit() })
   }
 })

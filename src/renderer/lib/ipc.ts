@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Sedrify — IPC wrapper with DevLog integration
-// Use these helpers instead of window.cabinet/field/recent/dialog directly.
-// contextBridge objects are frozen and cannot be proxied, so we wrap here.
+// contextBridge objects are frozen — wrap here instead of patching window.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { devLog } from '../components/DevLog'
@@ -9,6 +8,7 @@ import type {
   IpcResult, CabinetInfo, RecentCabinetInfo,
   CabinetCreatePayload, CabinetClonePayload,
   FieldInfo, FieldCreatePayload, FieldUpdatePayload, FieldReorderPayload,
+  RecordInfo, RecordDraftInfo, RecordSavePayload, RecordUpdatePayload,
 } from '../../main/ipcChannels'
 
 async function call<T>(
@@ -88,4 +88,25 @@ export const ipcField = {
     call<FieldInfo>('field', 'restore', () => window.field.restore(id), id),
   duplicate: (id: string) =>
     call<FieldInfo>('field', 'duplicate', () => window.field.duplicate(id), id),
+}
+
+// ── Record ────────────────────────────────────────────────────────────────────
+
+export const ipcRecord = {
+  list: () =>
+    call<RecordInfo[]>('record', 'list', () => window.record.list()),
+  listRecycled: () =>
+    call<RecordInfo[]>('record', 'listRecycled', () => window.record.listRecycled()),
+  draft: () =>
+    call<RecordDraftInfo>('record', 'draft', () => window.record.draft()),
+  save: (p: RecordSavePayload) =>
+    call<RecordInfo>('record', 'save', () => window.record.save(p)),
+  update: (p: RecordUpdatePayload) =>
+    call<RecordInfo>('record', 'update', () => window.record.update(p), { id: p.id }),
+  recycle: (id: string) =>
+    call<null>('record', 'recycle', () => window.record.recycle(id), id),
+  restore: (id: string) =>
+    call<RecordInfo>('record', 'restore', () => window.record.restore(id), id),
+  delete: (id: string) =>
+    call<null>('record', 'delete', () => window.record.delete(id), id),
 }

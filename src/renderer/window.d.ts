@@ -1,28 +1,18 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Sedrify — Window API type declarations  (v1.3.0 — adds field API)
-// Exposed by the preload script via contextBridge.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import type {
-  IpcResult,
-  CabinetInfo,
-  RecentCabinetInfo,
-  CabinetCreatePayload,
-  CabinetClonePayload,
-  FieldInfo,
-  FieldCreatePayload,
-  FieldUpdatePayload,
-  FieldReorderPayload,
+  IpcResult, CabinetInfo, RecentCabinetInfo,
+  CabinetCreatePayload, CabinetClonePayload,
+  FieldInfo, FieldCreatePayload, FieldUpdatePayload, FieldReorderPayload,
+  RecordInfo, RecordDraftInfo, RecordSavePayload, RecordUpdatePayload,
 } from '../main/ipcChannels'
 
 declare global {
   interface Window {
     cabinet: {
-      create(payload: CabinetCreatePayload): Promise<IpcResult<CabinetInfo>>
+      create(p: CabinetCreatePayload): Promise<IpcResult<CabinetInfo>>
       open(path: string): Promise<IpcResult<CabinetInfo>>
       close(): Promise<IpcResult<null>>
       current(): Promise<IpcResult<CabinetInfo | null>>
-      clone(payload: CabinetClonePayload): Promise<IpcResult<{ destPath: string }>>
+      clone(p: CabinetClonePayload): Promise<IpcResult<{ destPath: string }>>
       delete(path: string): Promise<IpcResult<null>>
     }
     recent: {
@@ -36,12 +26,22 @@ declare global {
     field: {
       list(): Promise<IpcResult<FieldInfo[]>>
       listRecycled(): Promise<IpcResult<FieldInfo[]>>
-      create(payload: FieldCreatePayload): Promise<IpcResult<FieldInfo>>
-      update(payload: FieldUpdatePayload): Promise<IpcResult<FieldInfo>>
-      reorder(payload: FieldReorderPayload): Promise<IpcResult<null>>
+      create(p: FieldCreatePayload): Promise<IpcResult<FieldInfo>>
+      update(p: FieldUpdatePayload): Promise<IpcResult<FieldInfo>>
+      reorder(p: FieldReorderPayload): Promise<IpcResult<null>>
       recycle(id: string): Promise<IpcResult<null>>
       restore(id: string): Promise<IpcResult<FieldInfo>>
       duplicate(id: string): Promise<IpcResult<FieldInfo>>
+    }
+    record: {
+      list(): Promise<IpcResult<RecordInfo[]>>
+      listRecycled(): Promise<IpcResult<RecordInfo[]>>
+      draft(): Promise<IpcResult<RecordDraftInfo>>
+      save(p: RecordSavePayload): Promise<IpcResult<RecordInfo>>
+      update(p: RecordUpdatePayload): Promise<IpcResult<RecordInfo>>
+      recycle(id: string): Promise<IpcResult<null>>
+      restore(id: string): Promise<IpcResult<RecordInfo>>
+      delete(id: string): Promise<IpcResult<null>>
     }
   }
 }

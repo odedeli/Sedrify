@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { FieldInfo, RecordInfo } from '../../main/ipcChannels'
 import TypeBadge from '../components/TypeBadge'
 import { ipcField, ipcRecord } from '../lib/ipc'
+import { useAppNav } from '../App'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ export default function CabFinder() {
     try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
   })
   const inputRef = useRef<HTMLInputElement>(null)
+  const { navigateTo } = useAppNav()
 
   // ── Keyboard shortcut: / to focus ─────────────────────────────────────────
 
@@ -56,10 +58,7 @@ export default function CabFinder() {
         e.preventDefault()
         inputRef.current?.focus()
       }
-      if (e.key === 'Escape') {
-        setQuery('')
-        inputRef.current?.blur()
-      }
+      if (e.key === 'Escape') { setQuery(''); inputRef.current?.blur() }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -72,15 +71,11 @@ export default function CabFinder() {
     try {
       const currentResult = await window.cabinet.current()
       if (!currentResult.ok || !currentResult.data) {
-        setNoCabinet(true)
-        setFields([])
-        setRecords([])
-        return
+        setNoCabinet(true); setFields([]); setRecords([]); return
       }
       setNoCabinet(false)
       const [fieldsResult, recordsResult] = await Promise.all([
-        ipcField.list(),
-        ipcRecord.list(),
+        ipcField.list(), ipcRecord.list(),
       ])
       if (fieldsResult.ok) setFields(fieldsResult.data)
       if (recordsResult.ok) setRecords(recordsResult.data)
@@ -99,7 +94,6 @@ export default function CabFinder() {
     const q = query.trim().toLowerCase()
     if (!q) return { recordHits: [], fieldHits: [] }
 
-    // Record hits — search all field values
     const recordHits: RecordHit[] = []
     for (const record of records) {
       for (const field of fields) {
@@ -108,12 +102,11 @@ export default function CabFinder() {
         const str = String(value).toLowerCase()
         if (str.includes(q)) {
           recordHits.push({ record, matchingField: field, matchedValue: String(value) })
-          break // one hit per record
+          break
         }
       }
     }
 
-    // Field hits — search field names
     const fieldHits: FieldHit[] = fields
       .filter(f => f.name.toLowerCase().includes(q))
       .map(f => ({ field: f }))
@@ -135,6 +128,13 @@ export default function CabFinder() {
   function clearRecent() {
     setRecentSearches([])
     try { localStorage.removeItem(RECENT_KEY) } catch { /* ignore */ }
+  }
+
+  // ── Navigate to record in Feeder ──────────────────────────────────────────
+
+  function handleRecordClick(record: RecordInfo) {
+    saveRecent(query.trim())
+    navigateTo('feeder', record.id)
   }
 
   // ── No cabinet ─────────────────────────────────────────────────────────────
@@ -183,7 +183,6 @@ export default function CabFinder() {
             }}>✕</button>
           )}
         </div>
-
         {query.trim() && (
           <p style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 8 }}>
             {loading ? 'Searching…' : `${totalResults} result${totalResults !== 1 ? 's' : ''} — ${recordHits.length} record${recordHits.length !== 1 ? 's' : ''}, ${fieldHits.length} field${fieldHits.length !== 1 ? 's' : ''}`}
@@ -219,7 +218,10 @@ export default function CabFinder() {
                   <circle cx="22" cy="22" r="14"/><path d="M32 32L42 42" strokeLinecap="round"/>
                 </svg>
                 <p style={{ fontSize: 13 }}>Search across all records and fields</p>
-                <p style={{ fontSize: 11, marginTop: 6 }}>Press <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>/</kbd> to focus · <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>Esc</kbd> to clear</p>
+                <p style={{ fontSize: 11, marginTop: 6 }}>
+                  Press <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>/</kbd> to focus ·{' '}
+                  <kbd style={{ fontSize: 10, padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, backgroundColor: 'var(--secondary)', color: 'var(--foreground)' }}>Esc</kbd> to clear
+                </p>
               </div>
             )}
           </div>
@@ -246,16 +248,22 @@ export default function CabFinder() {
               const isMatchingPrimary = primaryField?.id === matchingField.id
 
               return (
-                <div key={record.id} style={{
-                  padding: '10px 12px', borderRadius: 'var(--radius)',
-                  border: '1px solid var(--border)', backgroundColor: 'var(--card)',
-                  marginBottom: 6, cursor: 'default',
-                }}>
+                <div key={record.id}
+                  onClick={() => handleRecordClick(record)}
+                  style={{
+                    padding: '10px 12px', borderRadius: 'var(--radius)',
+                    border: '1px solid var(--border)', backgroundColor: 'var(--card)',
+                    marginBottom: 6, cursor: 'pointer', transition: 'border-color 0.1s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--primary)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: isMatchingPrimary ? 0 : 4 }}>
                     <span style={{ fontSize: 10, color: 'var(--muted-foreground)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>#{record.sequence}</span>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                       {isMatchingPrimary ? highlight(title, query) : title}
                     </span>
+                    <span style={{ fontSize: 10, color: 'var(--muted-foreground)', flexShrink: 0 }}>Open in Feeder →</span>
                   </div>
                   {!isMatchingPrimary && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>

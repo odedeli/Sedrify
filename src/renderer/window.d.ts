@@ -15,6 +15,7 @@ declare global {
       current(): Promise<IpcResult<CabinetInfo | null>>
       clone(p: CabinetClonePayload): Promise<IpcResult<{ destPath: string }>>
       delete(path: string): Promise<IpcResult<null>>
+      fileSize(): Promise<IpcResult<number>>
     }
     recent: {
       list(): Promise<IpcResult<RecentCabinetInfo[]>>

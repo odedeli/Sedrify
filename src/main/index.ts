@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron'
 import { join } from 'path'
-import { copyFileSync, unlinkSync, existsSync, appendFileSync, mkdirSync } from 'fs'
+import { copyFileSync, unlinkSync, existsSync, statSync, appendFileSync, mkdirSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import { CabinetEngine } from '../../foundation/cabinet/CabinetEngine'
 import { RecentCabinetsService } from '../../foundation/cabinet/RecentCabinetsService'
@@ -112,10 +112,9 @@ function getCollectionId(): string {
 
 function registerIpcHandlers(): void {
 
-  // ── Settings (M-6) ────────────────────────────────────────────────────────
   registerSettingsHandlers()
 
-  // ── Cabinet (M-1) ─────────────────────────────────────────────────────────
+  // ── Cabinet ────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.CABINET_CREATE, async (_event, payload: CabinetCreatePayload) => {
     log('INFO', 'cabinet:create', payload)
@@ -145,6 +144,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.CABINET_CURRENT, () => {
     const meta = cabinetEngine.currentCabinet()
     return ok(meta ? metaToCabinetInfo(meta) : null)
+  })
+
+  ipcMain.handle(IPC.CABINET_FILE_SIZE, (): IpcResult<number> => {
+    try {
+      const meta = cabinetEngine.currentCabinet()
+      if (!meta) return ok(0)
+      const stat = statSync(meta.path)
+      return ok(stat.size)
+    } catch (err) { return fail(err) }
   })
 
   ipcMain.handle(IPC.CABINET_CLONE, async (_event, payload: CabinetClonePayload) => {
@@ -200,19 +208,17 @@ function registerIpcHandlers(): void {
     return ok(result.filePath)
   })
 
-  // ── Field (M-2) ────────────────────────────────────────────────────────────
+  // ── Field ──────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.FIELD_LIST, async (): Promise<IpcResult<FieldInfo[]>> => {
     try {
-      const repo = getFieldRepo(); const colId = getCollectionId()
-      return ok((await repo.list(colId)).map(entityToFieldInfo))
+      return ok((await getFieldRepo().list(getCollectionId())).map(entityToFieldInfo))
     } catch (err) { return fail(err) }
   })
 
   ipcMain.handle(IPC.FIELD_LIST_RECYCLED, async (): Promise<IpcResult<FieldInfo[]>> => {
     try {
-      const repo = getFieldRepo(); const colId = getCollectionId()
-      return ok((await repo.listRecycled(colId)).map(entityToFieldInfo))
+      return ok((await getFieldRepo().listRecycled(getCollectionId())).map(entityToFieldInfo))
     } catch (err) { return fail(err) }
   })
 
@@ -255,10 +261,8 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.FIELD_REORDER, async (_event, payload: FieldReorderPayload): Promise<IpcResult<null>> => {
-    try {
-      await getFieldRepo().reorder(getCollectionId(), payload.orderedIds)
-      return ok(null)
-    } catch (err) { return fail(err) }
+    try { await getFieldRepo().reorder(getCollectionId(), payload.orderedIds); return ok(null) }
+    catch (err) { return fail(err) }
   })
 
   ipcMain.handle(IPC.FIELD_RECYCLE, async (_event, id: string): Promise<IpcResult<null>> => {
@@ -286,7 +290,7 @@ function registerIpcHandlers(): void {
     } catch (err) { return fail(err) }
   })
 
-  // ── Record (M-3) ──────────────────────────────────────────────────────────
+  // ── Record ─────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.RECORD_LIST, async (): Promise<IpcResult<RecordInfo[]>> => {
     try { return ok((await getRecordRepo().list(getCollectionId())).map(entityToRecordInfo)) }

@@ -48,8 +48,8 @@ afterEach(async () => {
 // ── AC-1: FieldTypeRegistry has exactly 10 foundation types ──────────────────
 
 describe('FieldTypeRegistry', () => {
-  it('AC-1a: registers exactly 10 foundation field types', () => {
-    expect(registry.all()).toHaveLength(10)
+  it('AC-1a: registers exactly 22 field types (10 foundation + 12 extended)', () => {
+    expect(registry.all()).toHaveLength(22)
   })
 
   it('AC-1b: all 10 types are registered by ID', () => {

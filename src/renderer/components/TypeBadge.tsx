@@ -1,4 +1,4 @@
-import type { FieldType } from "../data/mockData";
+import type { FieldType } from "../../main/ipcChannels";
 
 const typeConfig: Record<FieldType, { bg: string; fg: string; icon: React.ReactNode; title: string }> = {
   // ── Text ──────────────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ const typeConfig: Record<FieldType, { bg: string; fg: string; icon: React.ReactN
   },
 };
 
-export default function TypeBadge({ type }: { type: FieldType }) {
+export default function TypeBadge({ type, size = "sm" }: { type: FieldType; size?: "xs" | "sm" }) {
   const c = typeConfig[type];
   return (
     <span
@@ -234,15 +234,15 @@ export default function TypeBadge({ type }: { type: FieldType }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        width: 22,
-        height: 22,
+        width: size === "xs" ? 18 : 22,
+        height: size === "xs" ? 18 : 22,
         borderRadius: 3,
         backgroundColor: c.bg,
         color: c.fg,
         flexShrink: 0,
       }}
     >
-      <span style={{ width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <span style={{ width: size === "xs" ? 10 : 12, height: size === "xs" ? 10 : 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {c.icon}
       </span>
     </span>

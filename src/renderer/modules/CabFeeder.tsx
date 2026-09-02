@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import type { FieldInfo, RecordInfo } from '../../main/ipcChannels'
 import TypeBadge from '../components/TypeBadge'
+import type { AppSettings } from './Settings'
 import { ipcRecord, ipcField } from '../lib/ipc'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -27,7 +28,8 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
-export default function CabFeeder() {
+interface FeederProps { settings: AppSettings; onRecordsChange: () => void }
+export default function CabFeeder({ settings, onRecordsChange }: FeederProps) {
   const [records, setRecords] = useState<RecordInfo[]>([])
   const [fields, setFields] = useState<FieldInfo[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -126,6 +128,7 @@ export default function CabFeeder() {
     if (!saveResult.ok) { setError(saveResult.error); return }
 
     setRecords(prev => [...prev, saveResult.data])
+    onRecordsChange()
     setSelectedId(saveResult.data.id)
     setDetailOpen(true)
   }
@@ -171,6 +174,10 @@ export default function CabFeeder() {
   // ── Recycle record ────────────────────────────────────────────────────────
 
   async function handleRecycle(id: string) {
+    if (settings.confirmDelete) {
+      const confirmed = window.confirm('Move this record to the recycle bin?')
+      if (!confirmed) return
+    }
     const result = await ipcRecord.recycle(id)
     if (!result.ok) { setError(result.error); return }
     setRecords(prev => prev.filter(r => r.id !== id))
@@ -389,10 +396,10 @@ export default function CabFeeder() {
 
 // ── Grid view ─────────────────────────────────────────────────────────────────
 
-function GridView({ records, fields, colWidths, seqWidth, actionWidth, selectedId, editingCell, cellDraft, onSelect, onResizeStart, onCellClick, onCellChange, onCellBlur, onCellKeyDown, onRecycle }: {
+function GridView({ records, fields, colWidths, seqWidth, actionWidth, selectedId, editingCell, cellDraft, rowHeight, onSelect, onResizeStart, onCellClick, onCellChange, onCellBlur, onCellKeyDown, onRecycle }: {
   records: RecordInfo[]; fields: FieldInfo[]; colWidths: number[]; seqWidth: number; actionWidth: number
   selectedId: string | null; editingCell: { recordId: string; fieldId: string } | null; cellDraft: string
-  onSelect: (id: string) => void; onResizeStart: (e: React.MouseEvent, idx: number) => void
+  rowHeight?: number; onSelect: (id: string) => void; onResizeStart: (e: React.MouseEvent, idx: number) => void
   onCellClick: (recordId: string, fieldId: string, value: string | number | null) => void
   onCellChange: (v: string) => void; onCellBlur: () => void
   onCellKeyDown: (e: React.KeyboardEvent) => void; onRecycle: (id: string) => void
@@ -429,6 +436,7 @@ function GridView({ records, fields, colWidths, seqWidth, actionWidth, selectedI
         <div key={record.id} className="flex" style={{
           borderBottom: '1px solid var(--border)',
           backgroundColor: selectedId === record.id ? 'var(--secondary)' : 'transparent',
+          minHeight: rowHeight ?? 36,
           cursor: 'pointer',
         }}
           onClick={() => onSelect(record.id)}

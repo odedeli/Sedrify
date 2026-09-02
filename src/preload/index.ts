@@ -16,6 +16,7 @@ const cabinetAPI = {
   current: (): Promise<IpcResult<CabinetInfo | null>> => ipcRenderer.invoke(IPC.CABINET_CURRENT),
   clone: (p: CabinetClonePayload): Promise<IpcResult<{ destPath: string }>> => ipcRenderer.invoke(IPC.CABINET_CLONE, p),
   delete: (path: string): Promise<IpcResult<null>> => ipcRenderer.invoke(IPC.CABINET_DELETE, path),
+  fileSize: (): Promise<IpcResult<number>> => ipcRenderer.invoke(IPC.CABINET_FILE_SIZE),
 }
 
 const recentAPI = {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import CabExplorer from "./modules/CabExplorer";
 import CabDesigner from "./modules/CabDesigner";
 import CabFeeder from "./modules/CabFeeder";
@@ -6,11 +6,46 @@ import CabFinder from "./modules/CabFinder";
 import CabAnalyzer from "./modules/CabAnalyzer";
 import Settings, { defaultSettings, type AppSettings } from "./modules/Settings";
 import DevLog, { devLog } from "./components/DevLog";
-import { ipcSettings } from "./lib/ipc";
+import { ipcSettings, ipcCabinet, ipcField, ipcRecord } from "./lib/ipc";
 
 devLog('info', 'app', 'Sedrify renderer started')
 
-type ModuleId = "explorer" | "designer" | "feeder" | "finder" | "analyzer";
+// ── Cross-module navigation context ──────────────────────────────────────────
+// Allows CabFinder to navigate to Feeder and open a specific record.
+
+export type ModuleId = "explorer" | "designer" | "feeder" | "finder" | "analyzer"
+
+interface AppNav {
+  navigateTo: (module: ModuleId, recordId?: string) => void
+  openRecordId: string | null
+  clearOpenRecord: () => void
+}
+
+export const AppNavContext = createContext<AppNav>({
+  navigateTo: () => {},
+  openRecordId: null,
+  clearOpenRecord: () => {},
+})
+
+export function useAppNav() { return useContext(AppNavContext) }
+
+// ── Cabinet status context ─────────────────────────────────────────────────────
+// Shared live cabinet stats for status bar + sidebar badge.
+
+interface CabinetStatus {
+  name: string | null
+  recordCount: number
+  fieldCount: number
+  refresh: () => void
+}
+
+export const CabinetStatusContext = createContext<CabinetStatus>({
+  name: null, recordCount: 0, fieldCount: 0, refresh: () => {},
+})
+
+export function useCabinetStatus() { return useContext(CabinetStatusContext) }
+
+// ── Module definitions ────────────────────────────────────────────────────────
 
 const MODULES = [
   { id: "explorer" as ModuleId, shortLabel: "Explorer", label: "Cab Explorer", icon: (
@@ -40,6 +75,8 @@ const MODULES = [
   )},
 ]
 
+// ── Main App ──────────────────────────────────────────────────────────────────
+
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -47,49 +84,78 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
 
-  // ── Load settings from disk on startup ────────────────────────────────────
+  // Cross-module navigation
+  const [openRecordId, setOpenRecordId] = useState<string | null>(null)
+
+  // Live cabinet status
+  const [cabinetName, setCabinetName] = useState<string | null>(null)
+  const [recordCount, setRecordCount] = useState(0)
+  const [fieldCount, setFieldCount] = useState(0)
+
+  // ── Load settings on startup ───────────────────────────────────────────────
 
   useEffect(() => {
     ipcSettings.get().then(result => {
-      if (result.ok && result.data) {
-        setSettings(result.data as AppSettings)
-        devLog('info', 'app', 'Settings loaded from disk')
-      }
+      if (result.ok && result.data) setSettings(result.data as AppSettings)
       setSettingsLoaded(true)
     })
   }, [])
 
-  // ── Persist settings whenever they change ─────────────────────────────────
+  // ── Persist settings on change ─────────────────────────────────────────────
 
   useEffect(() => {
     if (!settingsLoaded) return
     ipcSettings.set(settings)
   }, [settings, settingsLoaded])
 
-  const { theme, sidebarCollapsed, showStatusBar } = settings
+  // ── Live cabinet status ────────────────────────────────────────────────────
+
+  const refreshCabinetStatus = useCallback(async () => {
+    const current = await ipcCabinet.current()
+    if (!current.ok || !current.data) {
+      setCabinetName(null); setRecordCount(0); setFieldCount(0); return
+    }
+    setCabinetName(current.data.name)
+    const [fields, records] = await Promise.all([ipcField.list(), ipcRecord.list()])
+    if (fields.ok) setFieldCount(fields.data.length)
+    if (records.ok) setRecordCount(records.data.length)
+  }, [])
+
+  useEffect(() => { refreshCabinetStatus() }, [refreshCabinetStatus])
+
+  // ── Cross-module navigation ────────────────────────────────────────────────
+
+  const navigateTo = useCallback((module: ModuleId, recordId?: string) => {
+    setActiveModule(module)
+    if (recordId) setOpenRecordId(recordId)
+  }, [])
+
+  const clearOpenRecord = useCallback(() => setOpenRecordId(null), [])
+
+  const { theme, sidebarCollapsed, showStatusBar, autoSave } = settings
 
   function setSidebarCollapsed(v: boolean) {
     setSettings(s => ({ ...s, sidebarCollapsed: v }))
   }
 
-  function handleSettingsChange(newSettings: AppSettings) {
-    setSettings(newSettings)
-  }
-
   function renderModule() {
     switch (activeModule) {
-      case "explorer":  return <CabExplorer />
+      case "explorer":  return <CabExplorer settings={settings} onCabinetChange={refreshCabinetStatus} />
       case "designer":  return <CabDesigner />
-      case "feeder":    return <CabFeeder />
+      case "feeder":    return <CabFeeder settings={settings} onRecordsChange={refreshCabinetStatus} />
       case "finder":    return <CabFinder />
       case "analyzer":  return <CabAnalyzer />
     }
   }
 
-  // Don't render until settings are loaded to avoid flash of wrong theme
   if (!settingsLoaded) return null
 
+  const navValue: AppNav = { navigateTo, openRecordId, clearOpenRecord }
+  const statusValue: CabinetStatus = { name: cabinetName, recordCount, fieldCount, refresh: refreshCabinetStatus }
+
   return (
+    <AppNavContext.Provider value={navValue}>
+    <CabinetStatusContext.Provider value={statusValue}>
     <div className={theme === "light" ? "light" : ""} style={{ height: "100%" }}>
       <div className="flex flex-col" style={{ height: "100%", backgroundColor: "var(--background)", color: "var(--foreground)" }}>
         <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
@@ -110,11 +176,13 @@ export default function App() {
               </button>
             </div>
 
-            {/* Cabinet badge */}
+            {/* Cabinet badge — live name */}
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2 mx-3 my-2 px-2 py-1.5" style={{ borderRadius: "var(--radius)", backgroundColor: "var(--secondary)", border: "1px solid var(--border)" }}>
-                <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, backgroundColor: "#4DE491" }}/>
-                <span className="text-xs truncate" style={{ color: "var(--foreground)", fontWeight: 500 }}>Sedrify</span>
+                <span className="inline-block rounded-full shrink-0" style={{ width: 6, height: 6, backgroundColor: cabinetName ? "#4DE491" : "#656C7B" }}/>
+                <span className="text-xs truncate" style={{ color: cabinetName ? "var(--foreground)" : "var(--muted-foreground)", fontWeight: 500 }}>
+                  {cabinetName ?? "No cabinet open"}
+                </span>
               </div>
             )}
 
@@ -180,15 +248,24 @@ export default function App() {
           </main>
         </div>
 
-        {/* Status bar */}
+        {/* Status bar — live counts */}
         {showStatusBar && (
           <div className="flex items-center shrink-0 gap-3" style={{ height: 24, padding: "0 14px", borderTop: "1px solid var(--border)", backgroundColor: "var(--card)" }}>
-            <StatusItem label="Sedrify" value="v0.1.0"/>
-            <Divider/>
+            {cabinetName ? (
+              <>
+                <StatusItem label="Cabinet" value={cabinetName}/>
+                <Divider/>
+                <StatusItem label="Records" value={String(recordCount)}/>
+                <Divider/>
+                <StatusItem label="Fields" value={String(fieldCount)}/>
+              </>
+            ) : (
+              <span className="font-mono" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>No cabinet open</span>
+            )}
             <div className="flex items-center gap-1.5 ml-auto">
-              <span className="inline-block rounded-full" style={{ width: 5, height: 5, backgroundColor: "#4DE491" }}/>
+              <span className="inline-block rounded-full" style={{ width: 5, height: 5, backgroundColor: cabinetName ? "#4DE491" : "#656C7B" }}/>
               <span className="font-mono" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-                {settings.autoSave === "off" ? "Auto-save off" : `Auto-save every ${settings.autoSave}m`}
+                {autoSave === "off" ? "Auto-save off" : `Auto-save every ${autoSave}m`}
               </span>
             </div>
           </div>
@@ -196,15 +273,12 @@ export default function App() {
       </div>
 
       {settingsOpen && (
-        <Settings
-          settings={settings}
-          setSettings={handleSettingsChange}
-          onClose={() => setSettingsOpen(false)}
-        />
+        <Settings settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)}/>
       )}
-
       {logOpen && <DevLog onClose={() => setLogOpen(false)}/>}
     </div>
+    </CabinetStatusContext.Provider>
+    </AppNavContext.Provider>
   )
 }
 

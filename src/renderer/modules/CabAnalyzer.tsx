@@ -209,7 +209,17 @@ export default function CabAnalyzer() {
 
   // ── Stat tile values ───────────────────────────────────────────────────────
 
-  const fileSize = useMemo(() => {
+  const [fileSize, setFileSize] = useState('—')
+
+  useEffect(() => {
+    if (!cabinet) { setFileSize('—'); return }
+    window.cabinet.fileSize().then(result => {
+      if (result.ok) setFileSize(formatFileSize(result.data))
+    })
+  }, [cabinet])
+
+  // Legacy: keep memo but only used if IPC not available
+  const _fileSize = useMemo(() => {
     // Estimate: SQLite page size 4096, rough estimate from record/field count
     const estimated = 32768 + records.length * 512 + fields.length * 256
     return formatFileSize(estimated)
@@ -259,7 +269,7 @@ export default function CabAnalyzer() {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <StatTile label="Records" value={String(records.length)} mono />
           <StatTile label="Fields" value={String(fields.length)} mono />
-          <StatTile label="Est. size" value={fileSize} mono />
+          <StatTile label="File size" value={fileSize} mono />
           <StatTile label="Cabinet updated" value={lastSaved} />
         </div>
 

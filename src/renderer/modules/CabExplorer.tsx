@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { CabinetInfo, RecentCabinetInfo } from '../../main/ipcChannels'
+import type { AppSettings } from './Settings'
 import { ipcCabinet, ipcRecent, ipcDialog } from '../lib/ipc'
+import { useCabinetStatus } from '../App'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,12 @@ interface DisplayCabinet {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function CabExplorer() {
+interface Props {
+  settings: AppSettings
+  onCabinetChange: () => void
+}
+
+export default function CabExplorer({ settings, onCabinetChange }: Props) {
   const [recents, setRecents] = useState<DisplayCabinet[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
@@ -23,6 +29,8 @@ export default function CabExplorer() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const { refresh: refreshStatus } = useCabinetStatus()
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
@@ -30,20 +38,12 @@ export default function CabExplorer() {
         ipcRecent.list(),
         ipcCabinet.current(),
       ])
-
       if (!recentResult.ok) throw new Error(recentResult.error)
-
-      const currentPath = currentResult.ok && currentResult.data
-        ? currentResult.data.path
-        : null
-
+      const currentPath = currentResult.ok && currentResult.data ? currentResult.data.path : null
       setActivePath(currentPath)
       setRecents(recentResult.data.map(r => ({
-        path: r.path,
-        name: r.name,
-        lastOpenedAt: r.lastOpenedAt,
-        isActive: r.path === currentPath,
-        isOpen: r.path === currentPath,
+        path: r.path, name: r.name, lastOpenedAt: r.lastOpenedAt,
+        isActive: r.path === currentPath, isOpen: r.path === currentPath,
       })))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -62,6 +62,7 @@ export default function CabExplorer() {
     if (!result.ok) { setError(result.error); return }
     setActivePath(result.data.path)
     await refresh()
+    onCabinetChange()
   }
 
   async function handleOpenRecent(path: string) {
@@ -69,14 +70,12 @@ export default function CabExplorer() {
     const result = await ipcCabinet.open(path)
     if (!result.ok) {
       setError(result.error)
-      if (result.error.includes('not found')) {
-        await ipcRecent.remove(path)
-        await refresh()
-      }
+      if (result.error.includes('not found')) { await ipcRecent.remove(path); await refresh() }
       return
     }
     setActivePath(result.data.path)
     await refresh()
+    onCabinetChange()
   }
 
   async function handleClone(sourcePath: string, sourceName: string) {
@@ -90,13 +89,16 @@ export default function CabExplorer() {
 
   async function handleDelete(path: string, name: string) {
     setError(null)
-    const confirmed = window.confirm(
-      `Permanently delete "${name}"?\n\nThis will delete the cabinet file from disk. This action cannot be undone.`
-    )
-    if (!confirmed) return
+    // Respect confirmDelete setting
+    if (settings.confirmDelete) {
+      const confirmed = window.confirm(
+        `Permanently delete "${name}"?\n\nThis will delete the cabinet file from disk. This action cannot be undone.`
+      )
+      if (!confirmed) return
+    }
     const result = await ipcCabinet.delete(path)
     if (!result.ok) { setError(result.error); return }
-    if (activePath === path) setActivePath(null)
+    if (activePath === path) { setActivePath(null); onCabinetChange() }
     await refresh()
   }
 
@@ -152,6 +154,7 @@ export default function CabExplorer() {
 
       {newCabModal && (
         <NewCabinetModal
+          defaultPath={settings.defaultPath}
           onClose={() => setNewCabModal(false)}
           onCreate={async (path, name) => {
             setError(null)
@@ -160,6 +163,7 @@ export default function CabExplorer() {
             setActivePath(result.data.path)
             setNewCabModal(false)
             await refresh()
+            onCabinetChange()
           }}
         />
       )}
@@ -235,14 +239,25 @@ function CabinetCard({ cabinet, isHovered, hoveredAction, onMouseEnter, onMouseL
   )
 }
 
-function NewCabinetModal({ onClose, onCreate }: { onClose: () => void; onCreate: (path: string, name?: string) => Promise<void> }) {
+function NewCabinetModal({ defaultPath, onClose, onCreate }: {
+  defaultPath: string
+  onClose: () => void
+  onCreate: (path: string, name?: string) => Promise<void>
+}) {
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function pickPath() {
-    const defaultName = name.trim() ? `${name.trim().replace(/\s+/g, '-').toLowerCase()}.cabinet` : 'new-cabinet.cabinet'
-    const result = await ipcDialog.saveFile(defaultName)
+    // Use defaultPath from settings as the starting directory hint in the filename
+    const defaultName = name.trim()
+      ? `${name.trim().replace(/\s+/g, '-').toLowerCase()}.cabinet`
+      : 'new-cabinet.cabinet'
+    // Prepend defaultPath if set and path not yet chosen
+    const hint = defaultPath && defaultPath !== '~/Documents/cabinets'
+      ? `${defaultPath}/${defaultName}`
+      : defaultName
+    const result = await ipcDialog.saveFile(hint)
     if (result.ok && result.data) setPath(result.data)
   }
 
